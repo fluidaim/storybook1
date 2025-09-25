@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>동화책 보기</title>
+  <link rel="preload" href="fonts/font1.ttf" as="font" type="font/ttf" crossorigin>
+  <style>
+    @font-face {
+      font-family: 'CustomFont';
+      src: url('fonts/font1.ttf') format('truetype');
+      font-weight: normal;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    :root {
+      --bg: #faf7f2;
+      --ink: #222;
+      --muted: #8a857f;
+      --accent: #a67c52;
+      --paper: #fffdfa;
+      --shadow: 0 6px 30px rgba(0,0,0,0.08);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", "Apple SD Gothic Neo", Helvetica, Arial, sans-serif;
+      background: linear-gradient(180deg, var(--bg), #f2efe9);
+      color: var(--ink);
+    }
+
+    /* Frame */
+    .wrap {
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .book {
+      width: min(1100px, 96vw);
+      aspect-ratio: 16/10;
+      background: var(--paper);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      position: relative;
+      border: 1px solid #eee4d6;
+    }
+
+    /* Header */
+    .bar {
+      position: absolute; inset: 0 0 auto 0; height: 44px;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 14px; font-size: 14px; color: var(--muted);
+      background: linear-gradient(#fffdf8, #f9f5ee);
+      border-bottom: 1px solid #efe7da;
+      z-index: 3;
+    }
+    .title { font-weight: 600; color: var(--accent); }
+    .pageinfo { font-variant-numeric: tabular-nums; }
+
+    /* Panels */
+    .panel {
+      position: relative;
+      height: 100%;
+      padding-top: 44px; /* header space */
+      cursor: pointer;
+    }
+    .panel:active { filter: brightness(0.98); }
+
+    .left { border-right: 1px solid #efe7da; display: grid; place-items: center; }
+    .artbox {
+      width: 90%; max-width: 520px; aspect-ratio: 1 / 1; border-radius: 14px;
+      background: #f3efe7; border: 1px solid #ece3d6; overflow: hidden;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+      display: grid; place-items: center;
+    }
+    .artbox img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .artbox video { width: 100%; height: 100%; object-fit: cover; display: none; background: #000; }
+
+    .right { display: flex; align-items: center; justify-content: center; }
+    .narration {
+      width: min(90%, 520px);
+      line-height: 1.7; font-size: clamp(18px, 2.2vw, 22px);
+      padding: 18px 4px; border-radius: 12px; color: #2a2a2a;
+      font-family: 'CustomFont', ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans KR", "Apple SD Gothic Neo", Helvetica, Arial, sans-serif;
+    }
+    .narration p { margin: 0; }
+
+    /* Progress */
+    .progress {
+      position: absolute; inset: auto 0 0 0; height: 6px; background: #f3eee6;
+    }
+    .progress > i {
+      display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #d7b38a, #b1895a);
+      transition: width 200ms ease-out;
+    }
+
+    /* Hints */
+    .hint {
+      position: absolute; bottom: 14px; right: 14px; z-index: 2;
+      font-size: 12px; color: var(--muted); background: rgba(255, 253, 248, 0.9);
+      padding: 6px 10px; border: 1px solid #efe7da; border-radius: 999px;
+      backdrop-filter: blur(6px);
+    }
+
+    /* Mobile tweaks */
+    @media (max-width: 720px) {
+      .book { aspect-ratio: 3/4; grid-template-columns: 1fr; }
+      .left { border-right: none; border-bottom: 1px solid #efe7da; }
+      .panel { padding-top: 44px; }
+      .hint { display: none; }
+    }
+      /* Icon button */
+    .iconbtn { appearance: none; border: 1px solid #e9dfcf; background: #fffdfa; color: #6c6257; border-radius: 10px; height: 28px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,0.8); }
+    .iconbtn:hover { filter: brightness(0.98); }
+    .iconbtn:active { transform: translateY(1px); }
+
+    /* Inline replay button at narration end */
+    .replay-inline { appearance: none; border: none; background: transparent; color: #6c6257; padding: 0 0 0 8px; cursor: pointer; vertical-align: middle; }
+    .replay-inline:hover { filter: brightness(0.9); }
+    .replay-inline:active { transform: translateY(1px); }
+    .replay-inline svg { width: 18px; height: 18px; display: inline-block; }
+
+    /* Audio gate (autoplay blocked) */
+    .gate { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(250,247,242,0.86); backdrop-filter: blur(2px); z-index: 4; }
+    .gate[hidden] { display: none; }
+    .gate > button { appearance: none; border: 1px solid #e9dfcf; background: #fffdfa; color: #6c6257; padding: 10px 16px; border-radius: 999px; font-size: 14px; cursor: pointer; box-shadow: var(--shadow); }
+    .gate > button:active { transform: translateY(1px); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="book" aria-live="polite">
+      <div class="bar">
+        <div class="title">동화책</div>
+        <div class="pageinfo" id="pageInfo">0 / 0</div>
+      </div>
+
+      <section class="panel left" id="leftPanel" aria-label="이전 페이지로 이동">
+        <div class="artbox">
+          <video id="artVideo" playsinline muted preload="metadata"></video>
+          <img id="art" alt="동화 그림" loading="eager" />
+        </div>
+      </section>
+
+      <section class="panel right" id="rightPanel" aria-label="다음 페이지로 이동">
+        <div class="narration" id="narration"><p>불러오는 중…</p></div>
+      </section>
+
+      <div class="progress"><i id="progress"></i></div>
+      <div class="gate" id="audioGate" hidden>
+        <button type="button" aria-label="음성 재생"> 스토리북 시작</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Config ---
+    const IMAGE_DIR = 'assets';     // p0.png ~ p20.png ...
+    const CSV_PATH  = 'text/narration.csv'; // must contain a header "Narration"
+    const IMAGE_PREFIX = 'p';
+    const IMAGE_EXT = '.png';
+
+    // Voice assets
+    const VOICE_DIR = 'voice'; // voice0.wav ~ voice20.wav
+    const VOICE_PREFIX = 'voice';
+    const VOICE_EXT = '.wav';
+
+    // --- State ---
+    let pages = []; // { imgSrc, text }
+    let idx = 0;
+
+    // --- Elements ---
+    const artEl = document.getElementById('art');
+    const artVideoEl = document.getElementById('artVideo');
+    const narrationEl = document.getElementById('narration');
+    const pageInfoEl = document.getElementById('pageInfo');
+    const progressEl = document.getElementById('progress');
+    const leftPanel = document.getElementById('leftPanel');
+    const rightPanel = document.getElementById('rightPanel');
+    const audioGate = document.getElementById('audioGate');
+
+    // Single shared audio element
+    const audio = new Audio();
+    audio.preload = 'auto';
+
+    // --- CSV parsing (handles quoted commas/newlines) ---
+    function parseCSV(text) {
+      const rows = [];
+      let field = '', row = [], inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (inQuotes) {
+          if (c === '"') {
+            if (text[i+1] === '"') { field += '"'; i++; } // escaped quote
+            else { inQuotes = false; }
+          } else { field += c; }
+        } else {
+          if (c === '"') inQuotes = true;
+          else if (c === ',') { row.push(field); field = ''; }
+          else if (c === '\n' || c === '\r') {
+            // consume paired CRLF
+            if (c === '\r' && text[i+1] === '\n') i++;
+            row.push(field); field = '';
+            if (row.length > 1 || (row.length === 1 && row[0] !== '')) rows.push(row);
+            row = [];
+          } else { field += c; }
+        }
+      }
+      if (field !== '' || row.length) { row.push(field); rows.push(row); }
+      return rows;
+    }
+
+    async function loadNarrations() {
+      const res = await fetch(CSV_PATH, { cache: 'no-store' });
+      if (!res.ok) throw new Error('CSV를 불러오지 못했습니다');
+      const raw = await res.text();
+      const rows = parseCSV(raw).filter(r => r.length && r.join('').trim() !== '');
+      // Map header
+      const header = rows.shift().map(h => h.trim());
+      const nIdx = header.findIndex(h => h.toLowerCase() === 'narration');
+      if (nIdx === -1) throw new Error('CSV에 "Narration" 컬럼이 없습니다');
+      return rows.map(r => (r[nIdx] || '').trim());
+    }
+
+    function buildPages(narrations) {
+      return narrations.map((txt, i) => ({
+        imgSrc: `${IMAGE_DIR}/${IMAGE_PREFIX}${i}${IMAGE_EXT}`,
+        text: txt || ''
+      }));
+    }
+
+    function preloadImages(list) {
+      list.forEach(p => {
+        const img = new Image();
+        img.src = p.imgSrc;
+      });
+    }
+
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+    function render() {
+      if (!pages.length) return;
+      idx = clamp(idx, 0, pages.length - 1);
+      const page = pages[idx];
+      artEl.src = page.imgSrc;
+      artEl.onerror = () => {
+        artEl.onerror = null;
+        artEl.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(`
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600">
+            <rect width="100%" height="100%" fill="#f3efe7"/>
+            <text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="#b7ab9b" font-size="22" font-family="sans-serif">이미지를 찾을 수 없습니다: ${page.imgSrc}</text>
+          </svg>`);
+      };
+      // Try show video if exists, else show image
+      setupMediaForPage(idx, page.imgSrc);
+      narrationEl.innerHTML = `<p>${escapeHTML(page.text).replace(/\n/g, '<br>')}</p>`;
+      // Append inline replay icon button at the end of narration
+      const paragraphEl = narrationEl.querySelector('p');
+      if (paragraphEl) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'replay-inline';
+        btn.title = '다시듣기';
+        btn.setAttribute('aria-label', '다시듣기');
+        btn.innerHTML = `
+<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+  <path d="M12 5V2L8 6l4 4V7a6 6 0 1 1-4.66 9.8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;
+        btn.addEventListener('click', (ev) => { ev.stopPropagation(); updateVoice(idx, true); });
+        paragraphEl.appendChild(document.createTextNode(' '));
+        paragraphEl.appendChild(btn);
+      }
+      pageInfoEl.textContent = `${idx + 1} / ${pages.length}`;
+      progressEl.style.width = `${((idx + 1) / pages.length) * 100}%`;
+      // ARIA update
+      rightPanel.setAttribute('aria-label', (idx < pages.length - 1 ? '다음 페이지로 이동' : '마지막 페이지'));
+      leftPanel.setAttribute('aria-label', (idx > 0 ? '이전 페이지로 이동' : '첫 페이지'));
+      // Voice update & autoplay
+      updateVoice(idx, true);
+    }
+    // Check if video exists and play, otherwise show image
+    async function setupMediaForPage(i, imgSrc) {
+      if (!artVideoEl) return;
+      const videoSrc = `${'video'}/${'video'}${i}.mp4`;
+      // Reset state
+      artVideoEl.pause();
+      artVideoEl.removeAttribute('src');
+      artVideoEl.load();
+      artVideoEl.style.display = 'none';
+      artEl.style.display = 'block';
+
+      try {
+        const head = await fetch(videoSrc, { method: 'HEAD', cache: 'no-store' });
+        if (!head.ok) throw new Error('no video');
+        // Show and play video
+        artVideoEl.src = videoSrc;
+        artVideoEl.style.display = 'block';
+        artEl.style.display = 'none';
+        // Autoplay attempt
+        const p = artVideoEl.play();
+        if (p && typeof p.then === 'function') {
+          p.catch(() => { /* ignore autoplay block; gate remains for audio only */ });
+        }
+        // When finished, revert to image
+        const onEnded = () => {
+          artVideoEl.style.display = 'none';
+          artEl.style.display = 'block';
+          artVideoEl.removeEventListener('ended', onEnded);
+        };
+        artVideoEl.addEventListener('ended', onEnded);
+      } catch (e) {
+        // No video: keep showing image
+        artVideoEl.style.display = 'none';
+        artEl.style.display = 'block';
+      }
+    }
+
+    function escapeHTML(s) {
+      return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]));
+    }
+
+    function nextPage() { if (idx < pages.length - 1) { idx++; render(); } }
+    function prevPage() { if (idx > 0) { idx--; render(); } }
+
+    // Click / Keyboard / Touch bindings
+    rightPanel.addEventListener('click', nextPage);
+    leftPanel.addEventListener('click', prevPage);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter') { e.preventDefault(); nextPage(); }
+      else if (e.key === 'ArrowLeft' || e.key === 'Backspace') { e.preventDefault(); prevPage(); }
+    });
+
+    // Simple swipe detection
+    let touchX = null;
+    document.addEventListener('touchstart', (e) => { touchX = e.touches[0].clientX; }, {passive:true});
+    document.addEventListener('touchend', (e) => {
+      if (touchX == null) return;
+      const dx = e.changedTouches[0].clientX - touchX;
+      if (Math.abs(dx) > 40) { if (dx < 0) nextPage(); else prevPage(); }
+      touchX = null;
+    });
+
+    // Audio gate
+    if (audioGate) audioGate.addEventListener('click', () => updateVoice(idx, true));
+
+    // Voice helpers
+    function voiceSrc(i) { return `${VOICE_DIR}/${VOICE_PREFIX}${i}${VOICE_EXT}`; }
+    function updateVoice(i, fromStart = true) {
+      try {
+        audio.src = voiceSrc(i);
+        if (fromStart) audio.currentTime = 0;
+        const p = audio.play();
+        if (p && typeof p.then === 'function') {
+          p.then(() => { if (audioGate) audioGate.hidden = true; })
+           .catch(() => { if (audioGate) audioGate.hidden = false; });
+        }
+      } catch (e) { if (audioGate) audioGate.hidden = false; }
+      // Preload next voice
+      if (i + 1 < pages.length) {
+        const a = new Audio(); a.preload = 'auto'; a.src = voiceSrc(i + 1);
+      }
+    }
+
+    // Init
+    (async function init() {
+      try {
+        const narrations = await loadNarrations();
+        pages = buildPages(narrations);
+        if (!pages.length) throw new Error('표시할 페이지가 없습니다');
+        preloadImages(pages);
+        render();
+      } catch (err) {
+        console.error(err);
+        narrationEl.innerHTML = `<p style="color:#b00020">${escapeHTML(err.message || '불러오기 오류')}</p>`;
+        pageInfoEl.textContent = '0 / 0';
+      }
+    })();
+  </script>
+</body>
+</html>
