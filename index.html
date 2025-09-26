@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>동화책 보기</title>
   <link rel="preload" href="fonts/font1.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="voice/voice0.wav" as="audio">
+  <link rel="preload" href="voice/voice1.wav" as="audio">
+  <link rel="preload" href="voice/voice2.wav" as="audio">
   <style>
     @font-face {
       font-family: 'CustomFont';
@@ -131,6 +134,13 @@
     .gate[hidden] { display: none; }
     .gate > button { appearance: none; border: 1px solid #e9dfcf; background: #fffdfa; color: #6c6257; padding: 10px 16px; border-radius: 999px; font-size: 14px; cursor: pointer; box-shadow: var(--shadow); }
     .gate > button:active { transform: translateY(1px); }
+
+    /* Loading state */
+    .loading { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(250,247,242,0.9); backdrop-filter: blur(2px); z-index: 5; }
+    .loading[hidden] { display: none; }
+    .loading > div { text-align: center; color: #6c6257; }
+    .loading .spinner { width: 32px; height: 32px; border: 3px solid #e9dfcf; border-top: 3px solid #a67c52; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 12px; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -153,6 +163,12 @@
       </section>
 
       <div class="progress"><i id="progress"></i></div>
+      <div class="loading" id="loadingScreen">
+        <div>
+          <div class="spinner"></div>
+          <div>로딩 중...</div>
+        </div>
+      </div>
       <div class="gate" id="audioGate" hidden>
         <button type="button" aria-label="음성 재생"> 스토리북 시작</button>
       </div>
@@ -184,6 +200,7 @@
     const leftPanel = document.getElementById('leftPanel');
     const rightPanel = document.getElementById('rightPanel');
     const audioGate = document.getElementById('audioGate');
+    const loadingScreen = document.getElementById('loadingScreen');
 
     // Single shared audio element
     const audio = new Audio();
@@ -239,6 +256,41 @@
       list.forEach(p => {
         const img = new Image();
         img.src = p.imgSrc;
+      });
+    }
+
+    // Preload media for pages
+    async function preloadMediaForPages(startIdx, endIdx) {
+      const promises = [];
+      for (let i = startIdx; i <= endIdx && i < pages.length; i++) {
+        // Preload voice
+        const voiceSrc = `${VOICE_DIR}/${VOICE_PREFIX}${i}${VOICE_EXT}`;
+        promises.push(preloadAudio(voiceSrc));
+        
+        // Preload video if exists
+        const videoSrc = `${'video'}/${'video'}${i}.mp4`;
+        promises.push(preloadVideo(videoSrc));
+      }
+      return Promise.allSettled(promises);
+    }
+
+    function preloadAudio(src) {
+      return new Promise((resolve) => {
+        const audio = new Audio();
+        audio.preload = 'auto';
+        audio.oncanplaythrough = () => resolve();
+        audio.onerror = () => resolve(); // Ignore errors
+        audio.src = src;
+      });
+    }
+
+    function preloadVideo(src) {
+      return new Promise((resolve) => {
+        const video = document.createElement('video');
+        video.preload = 'metadata';
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => resolve(); // Ignore errors
+        video.src = src;
       });
     }
 
@@ -325,8 +377,22 @@
       return s.replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[m]));
     }
 
-    function nextPage() { if (idx < pages.length - 1) { idx++; render(); } }
-    function prevPage() { if (idx > 0) { idx--; render(); } }
+    function nextPage() { 
+      if (idx < pages.length - 1) { 
+        idx++; 
+        render(); 
+        // Preload next 3 pages
+        preloadMediaForPages(idx, Math.min(idx + 2, pages.length - 1));
+      } 
+    }
+    function prevPage() { 
+      if (idx > 0) { 
+        idx--; 
+        render(); 
+        // Preload next 3 pages
+        preloadMediaForPages(idx, Math.min(idx + 2, pages.length - 1));
+      } 
+    }
 
     // Click / Keyboard / Touch bindings
     rightPanel.addEventListener('click', nextPage);
@@ -368,16 +434,44 @@
       }
     }
 
+    // Wait for font to load
+    function waitForFont() {
+      return new Promise((resolve) => {
+        if (document.fonts && document.fonts.ready) {
+          document.fonts.ready.then(() => resolve());
+        } else {
+          // Fallback for browsers without FontFace API
+          setTimeout(() => resolve(), 1000);
+        }
+      });
+    }
+
     // Init
     (async function init() {
       try {
+        // Show loading screen
+        if (loadingScreen) loadingScreen.hidden = false;
+        
+        // Wait for font to load first
+        await waitForFont();
+        
         const narrations = await loadNarrations();
         pages = buildPages(narrations);
         if (!pages.length) throw new Error('표시할 페이지가 없습니다');
+        
+        // Preload images and first 3 pages media
         preloadImages(pages);
+        await preloadMediaForPages(0, Math.min(2, pages.length - 1));
+        
+        // Additional delay to ensure everything is ready
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Hide loading screen and render
+        if (loadingScreen) loadingScreen.hidden = true;
         render();
       } catch (err) {
         console.error(err);
+        if (loadingScreen) loadingScreen.hidden = true;
         narrationEl.innerHTML = `<p style="color:#b00020">${escapeHTML(err.message || '불러오기 오류')}</p>`;
         pageInfoEl.textContent = '0 / 0';
       }
